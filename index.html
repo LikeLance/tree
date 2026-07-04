@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>圣诞快乐 · Merry Christmas</title>
+<link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    background: #05081a;
+    font-family: 'Noto Serif SC', 'Georgia', serif;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+  }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    pointer-events: none;
+    z-index: 10;
+    padding-top: clamp(1.5rem, 5vh, 4rem);
+  }
+
+  .greeting {
+    font-family: 'Ma Shan Zheng', 'STKaiti', 'KaiTi', cursive;
+    font-size: clamp(1.8rem, 5.5vw, 3.8rem);
+    color: #ffd700;
+    letter-spacing: 0.1em;
+    text-align: center;
+    animation: greetingGlow 3.5s ease-in-out infinite;
+    line-height: 1.3;
+    text-shadow:
+      0 0 20px rgba(255,215,0,0.7),
+      0 0 40px rgba(255,180,0,0.4),
+      0 0 80px rgba(255,150,0,0.2),
+      0 2px 6px rgba(0,0,0,0.6);
+  }
+
+  .subtitle {
+    font-family: 'Great Vibes', 'Georgia', cursive;
+    font-size: clamp(1.4rem, 3.5vw, 2.5rem);
+    color: rgba(255,255,255,0.85);
+    letter-spacing: 0.04em;
+    margin-top: clamp(0.2rem, 0.8vh, 0.6rem);
+    text-shadow:
+      0 0 15px rgba(255,255,255,0.4),
+      0 0 30px rgba(255,255,255,0.2),
+      0 2px 4px rgba(0,0,0,0.5);
+    animation: subtitleFloat 4s ease-in-out infinite;
+  }
+
+  @keyframes greetingGlow {
+    0%, 100% {
+      text-shadow:
+        0 0 20px rgba(255,215,0,0.7),
+        0 0 40px rgba(255,180,0,0.4),
+        0 0 80px rgba(255,150,0,0.2),
+        0 2px 6px rgba(0,0,0,0.6);
+    }
+    50% {
+      text-shadow:
+        0 0 30px rgba(255,215,0,0.9),
+        0 0 60px rgba(255,180,0,0.55),
+        0 0 100px rgba(255,150,0,0.3),
+        0 2px 6px rgba(0,0,0,0.6);
+    }
+  }
+
+  @keyframes subtitleFloat {
+    0%, 100% { transform: translateY(0); opacity: 0.85; }
+    50% { transform: translateY(-6px); opacity: 1; }
+  }
+
+  @media (max-width: 480px) {
+    .overlay { padding-top: clamp(1rem, 3vh, 2rem); }
+    .greeting { letter-spacing: 0.06em; }
+  }
+</style>
+</head>
+<body>
+<canvas id="scene" aria-hidden="true"></canvas>
+
+<div class="overlay">
+  <h1 class="greeting">祝胡登鲜姐姐圣诞快乐</h1>
+  <p class="subtitle">Merry Christmas</p>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  const canvas = document.getElementById('scene');
+  const ctx = canvas.getContext('2d');
+
+  /* ════════════ Global State ════════════ */
+  let W, H, scale, dpr;
+  let treeCX, treeCY;
+  let rotAngle = 0;
+  let time = 0;
+  let isMobile = false;
+
+  /* ════════════ Glow Sprites (pre-rendered for performance) ════════════ */
+  const glow = {};
+
+  function makeGlow(r, g, b) {
+    const sz = 64;
+    const c = document.createElement('canvas');
+    c.width = c.height = sz;
+    const cx = c.getContext('2d');
+    const grad = cx.createRadialGradient(sz/2, sz/2, 0, sz/2, sz/2, sz/2);
+    grad.addColorStop(0,    `rgba(${r},${g},${b},1)`);
+    grad.addColorStop(0.15, `rgba(${r},${g},${b},0.7)`);
+    grad.addColorStop(0.4,  `rgba(${r},${g},${b},0.18)`);
+    grad.addColorStop(1,    `rgba(${r},${g},${b},0)`);
+    cx.fillStyle = grad;
+    cx.fillRect(0, 0, sz, sz);
+    return c;
+  }
+
+  function initSprites() {
+    glow.gold   = makeGlow(255,215,0);
+    glow.warm   = makeGlow(255,200,100);
+    glow.white  = makeGlow(255,255,255);
+    glow.red    = makeGlow(255,80,80);
+    glow.blue   = makeGlow(100,180,255);
+    glow.green  = makeGlow(100,255,150);
+    glow.orange = makeGlow(255,150,50);
+    glow.pink   = makeGlow(255,150,200);
+  }
+
+  /* ════════════ Resize ════════════ */
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    scale = Math.min(W, H) / 850;
+    treeCX = W / 2;
+    treeCY = H * 0.6;
+    isMobile = W < 640;
+
+    initParticles();
+  }
+
+  /* ════════════ Tree Definition ════════════ */
+  // Tiers: bottom to top, in unscaled tree-local coords
+  const tiers = [
+    { apexY:  -8, baseY: 138, baseHW: 110 }, // 0 bottom
+    { apexY: -55, baseY:  60, baseHW:  84 }, // 1 lower-mid
+    { apexY: -98, baseY: -14, baseHW:  60 }, // 2 upper-mid
+    { apexY:-138, baseY: -80, baseHW:  38 }, // 3 top
+  ];
+
+  // 3D Ornaments: angle = position around Y axis, yRatio = 0(apex)..1(base)
+  const ornamentDefs = [
+    // tier 0
+    { tier:0, angle:0.3, yr:0.85, sz:7, color:'#e63946' },
+    { tier:0, angle:1.1, yr:0.70, sz:6, color:'#ffd700' },
+    { tier:0, angle:1.9, yr:0.90, sz:7, color:'#457b9d' },
+    { tier:0, angle:2.7, yr:0.75, sz:5, color:'#e63946' },
+    { tier:0, angle:3.3, yr:0.50, sz:6, color:'#ffd700' },
+    { tier:0, angle:4.1, yr:0.65, sz:7, color:'#f4a261' },
+    { tier:0, angle:4.9, yr:0.80, sz:6, color:'#e63946' },
+    { tier:0, angle:5.7, yr:0.55, sz:5, color:'#457b9d' },
+    // tier 1
+    { tier:1, angle:0.5, yr:0.60, sz:6, color:'#ffd700' },
+    { tier:1, angle:1.5, yr:0.40, sz:5, color:'#e63946' },
+    { tier:1, angle:2.5, yr:0.70, sz:6, color:'#457b9d' },
+    { tier:1, angle:3.7, yr:0.50, sz:5, color:'#f4a261' },
+    { tier:1, angle:4.7, yr:0.30, sz:6, color:'#ffd700' },
+    { tier:1, angle:5.4, yr:0.65, sz:5, color:'#e63946' },
+    // tier 2
+    { tier:2, angle:0.8, yr:0.50, sz:5, color:'#e63946' },
+    { tier:2, angle:2.2, yr:0.40, sz:5, color:'#ffd700' },
+    { tier:2, angle:3.5, yr:0.60, sz:5, color:'#457b9d' },
+    { tier:2, angle:5.0, yr:0.45, sz:5, color:'#f4a261' },
+    // tier 3
+    { tier:3, angle:1.0, yr:0.40, sz:4, color:'#ffd700' },
+    { tier:3, angle:3.0, yr:0.50, sz:4, color:'#e63946' },
+    { tier:3, angle:5.0, yr:0.60, sz:4, color:'#457b9d' },
+  ];
+
+  const lightColors = [
+    { r:255, g:100, b:100 },
+    { r:255, g:215, b:0   },
+    { r:100, g:200, b:255 },
+    { r:255, g:150, b:50  },
+    { r:100, g:255, b:150 },
+  ];
+
+  /* ════════════ Color Helpers ════════════ */
+  function hexRGB(hex) {
+    return {
+      r: parseInt(hex.slice(1,3),16),
+      g: parseInt(hex.slice(3,5),16),
+      b: parseInt(hex.slice(5,7),16)
+    };
+  }
+  function lighten(hex, amt) {
+    const {r,g,b} = hexRGB(hex);
+    return `rgb(${Math.min(255,r+amt)},${Math.min(255,g+amt)},${Math.min(255,b+amt)})`;
+  }
+  function darken(hex, amt) {
+    const {r,g,b} = hexRGB(hex);
+    return `rgb(${Math.max(0,r-amt)},${Math.max(0,g-amt)},${Math.max(0,b-amt)})`;
+  }
+
+  /* ════════════ Background ════════════ */
+  let bgStars = [];
+
+  function initBgStars() {
+    bgStars = [];
+    const n = isMobile ? 120 : 250;
+    for (let i = 0; i < n; i++) {
+      bgStars.push({
+        x: Math.random()*W,
+        y: Math.random()*H*0.75,
+        r: Math.random()*1.6+0.3,
+        sp: Math.random()*0.025+0.005,
+        off: Math.random()*Math.PI*2,
+        a:  Math.random()*0.6+0.4
+      });
+    }
+  }
+
+  function drawSky() {
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,    '#05081c');
+    g.addColorStop(0.35, '#0a1035');
+    g.addColorStop(0.65, '#111845');
+    g.addColorStop(0.85, '#162050');
+    g.addColorStop(1,    '#1a2858');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,H);
+
+    // aurora
+    const ag = ctx.createRadialGradient(W*0.7, H*0.12, 0, W*0.7, H*0.12, W*0.65);
+    ag.addColorStop(0,   'rgba(40,70,130,0.12)');
+    ag.addColorStop(0.5, 'rgba(20,40,100,0.05)');
+    ag.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = ag;
+    ctx.fillRect(0,0,W,H);
+
+    // warm glow from bottom (tree area)
+    const wg = ctx.createRadialGradient(treeCX, treeCY+50*scale, 0, treeCX, treeCY+50*scale, W*0.5);
+    wg.addColorStop(0,   'rgba(80,50,20,0.08)');
+    wg.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = wg;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  function drawMoon() {
+    const mx = W*0.8, my = H*0.13;
+    const mr = Math.min(W,H)*0.055;
+
+    // outer glow
+    ctx.drawImage(glow.white, mx-mr*4, my-mr*4, mr*8, mr*8);
+
+    // moon body
+    const mg = ctx.createRadialGradient(mx-mr*0.2, my-mr*0.2, mr*0.1, mx, my, mr);
+    mg.addColorStop(0,   '#fffef5');
+    mg.addColorStop(0.7, '#f0ead8');
+    mg.addColorStop(1,   '#d8d2c0');
+    ctx.fillStyle = mg;
+    ctx.beginPath();
+    ctx.arc(mx, my, mr, 0, Math.PI*2);
+    ctx.fill();
+
+    // craters
+    ctx.fillStyle = 'rgba(190,185,170,0.18)';
+    ctx.beginPath(); ctx.arc(mx-mr*0.3, my-mr*0.25, mr*0.2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx+mr*0.15, my-mr*0.05, mr*0.14, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx-mr*0.1, my+mr*0.3, mr*0.22, 0, Math.PI*2); ctx.fill();
+  }
+
+  function drawBgStars() {
+    for (const s of bgStars) {
+      const a = s.a * (0.5 + 0.5*Math.sin(time*s.sp*50 + s.off));
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+      ctx.fill();
+
+      if (s.r > 1.1 && a > 0.65) {
+        ctx.globalAlpha = a * 0.3;
+        ctx.drawImage(glow.white, s.x-s.r*3, s.y-s.r*3, s.r*6, s.r*6);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawGround() {
+    const gy = H*0.83;
+    const g = ctx.createLinearGradient(0, gy, 0, H);
+    g.addColorStop(0,   'rgba(210,225,240,0.85)');
+    g.addColorStop(0.3, 'rgba(230,238,248,0.92)');
+    g.addColorStop(1,   'rgba(245,248,252,0.96)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(0, gy);
+    for (let x = 0; x <= W; x += 5) {
+      ctx.lineTo(x, gy + Math.sin(x*0.004+1.5)*12 + Math.sin(x*0.01+3)*6);
+    }
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    ctx.fill();
+
+    // ground sparkles
+    const n = isMobile ? 20 : 45;
+    for (let i = 0; i < n; i++) {
+      const gx = (i*137.5+50) % W;
+      const gyy = gy + 15 + ((i*73) % (H-gy-5));
+      const a = 0.2 + 0.35*Math.sin(time*2 + i*1.7);
+      ctx.globalAlpha = a;
+      ctx.drawImage(glow.white, gx-3, gyy-3, 6, 6);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawVignette() {
+    const g = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.3, W/2, H/2, Math.max(W,H)*0.75);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,10,0.45)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  /* ════════════ Tree Glow ════════════ */
+  function drawTreeGlow() {
+    const r = 200 * scale;
+    const pulse = 0.85 + 0.15 * Math.sin(time * 1.5);
+    ctx.globalAlpha = pulse;
+    ctx.drawImage(glow.gold, treeCX-r, treeCY-r, r*2, r*2);
+    ctx.globalAlpha = 1;
+  }
+
+  /* ════════════ 3D Tree Body ════════════ */
+  function drawTreeBody(s, rot) {
+    const lightDir = Math.cos(rot); // -1..1
+
+    for (const t of tiers) {
+      const ay = t.apexY * s;
+      const by = t.baseY * s;
+      const bw = t.baseHW * s;
+
+      // Rotating 3D shading gradient
+      const g = ctx.createLinearGradient(-bw*lightDir, 0, bw*lightDir, 0);
+      g.addColorStop(0,    '#082810');
+      g.addColorStop(0.2,  '#0d3818');
+      g.addColorStop(0.45, '#144a20');
+      g.addColorStop(0.55, '#185528');
+      g.addColorStop(0.8,  '#1e6830');
+      g.addColorStop(1,    '#247538');
+      ctx.fillStyle = g;
+
+      ctx.beginPath();
+      ctx.moveTo(0, ay);
+      ctx.lineTo(-bw, by);
+      const segs = 10;
+      for (let i = 0; i <= segs; i++) {
+        const x = -bw + (2*bw*i)/segs;
+        const w = Math.sin(i*0.7+0.5)*5*s + Math.sin(i*1.5)*2*s;
+        ctx.lineTo(x, by + w);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      // Edge highlight on lit side
+      const lit = Math.abs(lightDir);
+      if (lit > 0.15) {
+        const side = lightDir > 0 ? 1 : -1;
+        ctx.strokeStyle = `rgba(140,210,140,${lit*0.12})`;
+        ctx.lineWidth = 2*s;
+        ctx.beginPath();
+        ctx.moveTo(0, ay);
+        ctx.lineTo(side * bw, by);
+        ctx.stroke();
+      }
+    }
+  }
+
+  /* ════════════ 3D Tree Ridges (surface texture) ════════════ */
+  function drawTreeRidges(s, rot) {
+    const numRidges = 16;
+    for (const t of tiers) {
+      for (let i = 0; i < numRidges; i++) {
+        const a = (i / numRidges) * Math.PI * 2;
+        const vis = a - rot;
+        const z = Math.sin(vis);
+        if (z < 0.05) continue;
+
+        const alpha = z * 0.08;
+        const x2 = t.baseHW * Math.cos(vis) * s;
+
+        ctx.strokeStyle = `rgba(120,190,120,${alpha})`;
+        ctx.lineWidth = 0.8 * s;
+        ctx.beginPath();
+        ctx.moveTo(0, t.apexY * s);
+        ctx.lineTo(x2, t.baseY * s);
+        ctx.stroke();
+      }
+    }
+  }
+
+  /* ════════════ 3D Garland ════════════ */
+  function computeGarland(s, rot) {
+    const back = [], front = [], frontLights = [];
+
+    for (let ti = 0; ti < tiers.length; ti++) {
+      const t = tiers[ti];
+      const turns = 2.5;
+      const pts = 36;
+      let px = 0, py = 0, pz = 0;
+
+      for (let i = 0; i <= pts; i++) {
+        const ratio = i / pts;
+        const y = (t.apexY + ratio * (t.baseY - t.apexY)) * s;
+        const r = t.baseHW * ratio * 0.93 * s;
+        const a = ratio * turns * Math.PI * 2 + ti * 0.8;
+        const vis = a - rot;
+        const x = r * Math.cos(vis);
+        const z = r * Math.sin(vis);
+
+        if (i > 0) {
+          const seg = { x1:px, y1:py, x2:x, y2:y, z:(z+pz)/2 };
+          if (seg.z > 0) front.push(seg);
+          else back.push(seg);
+        }
+
+        // Garland lights at intervals
+        if (i % 4 === 0) {
+          const lc = lightColors[(i/4 + ti*2) % lightColors.length];
+          const light = { x, y, z, color: lc, phase: i*0.5+ti*1.2 };
+          if (z > 0) frontLights.push(light);
+        }
+
+        px = x; py = y; pz = z;
+      }
+    }
+    return { back, front, frontLights };
+  }
+
+  function drawGarlandSegs(segs, alpha) {
+    ctx.strokeStyle = `rgba(255,215,0,${alpha})`;
+    ctx.lineWidth = 1.3 * scale;
+    ctx.beginPath();
+    for (const s of segs) {
+      ctx.moveTo(s.x1, s.y1);
+      ctx.lineTo(s.x2, s.y2);
+    }
+    ctx.stroke();
+  }
+
+  function drawGarlandLights(lights) {
+    for (const l of lights) {
+      const twinkle = 0.5 + 0.5 * Math.sin(time*4 + l.phase);
+      const a = twinkle * 0.9;
+      const sz = (3 + twinkle*2) * scale;
+
+      // glow
+      ctx.globalAlpha = a * 0.6;
+      const gs = sz * 5;
+      const spriteKey = l.color.r > 200 && l.color.g > 150 ? 'gold'
+                      : l.color.r > 200 ? 'red'
+                      : l.color.b > 150 ? 'blue'
+                      : l.color.g > 150 ? 'green' : 'orange';
+      ctx.drawImage(glow[spriteKey], l.x-gs/2, l.y-gs/2, gs, gs);
+
+      // core
+      ctx.globalAlpha = a;
+      ctx.fillStyle = `rgb(${l.color.r},${l.color.g},${l.color.b})`;
+      ctx.beginPath();
+      ctx.arc(l.x, l.y, sz, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* ════════════ 3D Ornaments ════════════ */
+  function computeOrnaments(s, rot) {
+    const list = [];
+    for (const o of ornamentDefs) {
+      const t = tiers[o.tier];
+      const y = (t.apexY + o.yr * (t.baseY - t.apexY)) * s;
+      const r = t.baseHW * o.yr * s;
+      const vis = o.angle - rot;
+      const x = r * Math.cos(vis);
+      const z = r * Math.sin(vis);
+      const depth = Math.sin(vis); // -1..1
+
+      list.push({
+        x, y, z, depth,
+        sz: o.sz * s,
+        color: o.color
+      });
+    }
+    // sort by z (back to front) so front ornaments draw on top
+    list.sort((a,b) => a.z - b.z);
+    return list;
+  }
+
+  function drawOrnament(o) {
+    if (o.depth < 0) return; // behind tree, skip
+
+    // smooth edge fade
+    const edgeFade = Math.min(1, o.depth / 0.2);
+    if (edgeFade < 0.01) return;
+
+    const szScale = 0.85 + o.depth * 0.2;
+    const drawR = o.sz * szScale;
+    const a = edgeFade;
+
+    // glow
+    ctx.globalAlpha = a * 0.25;
+    const gs = drawR * 5;
+    const { r, g, b } = hexRGB(o.color);
+    ctx.drawImage(glow[
+      g > 180 ? 'gold' : r > 180 && g < 150 ? 'red' : b > 120 ? 'blue' : 'orange'
+    ], o.x-gs/2, o.y-gs/2, gs, gs);
+
+    // body with 3D radial gradient
+    ctx.globalAlpha = a;
+    const bg = ctx.createRadialGradient(
+      o.x - drawR*0.3, o.y - drawR*0.3, drawR*0.1,
+      o.x, o.y, drawR
+    );
+    bg.addColorStop(0,   lighten(o.color, 50));
+    bg.addColorStop(0.5, o.color);
+    bg.addColorStop(1,   darken(o.color, 35));
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, drawR, 0, Math.PI*2);
+    ctx.fill();
+
+    // specular highlight
+    ctx.globalAlpha = a * 0.7;
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.beginPath();
+    ctx.arc(o.x - drawR*0.25, o.y - drawR*0.35, drawR*0.22, 0, Math.PI*2);
+    ctx.fill();
+
+    // cap (small ring at top)
+    ctx.globalAlpha = a * 0.5;
+    ctx.strokeStyle = '#8a7a3a';
+    ctx.lineWidth = 1 * scale;
+    ctx.beginPath();
+    ctx.arc(o.x, o.y - drawR*0.9, drawR*0.2, 0, Math.PI*2);
+    ctx.stroke();
+  }
+
+  /* ════════════ Trunk ════════════ */
+  function drawTrunk(s) {
+    const tw = 16*s, tt = 130*s, th = 42*s;
+    const g = ctx.createLinearGradient(-tw, 0, tw, 0);
+    g.addColorStop(0,   '#2d1a0e');
+    g.addColorStop(0.3, '#543820');
+    g.addColorStop(0.5, '#6a4830');
+    g.addColorStop(0.7, '#4a2d18');
+    g.addColorStop(1,   '#251208');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(-tw*0.85, tt);
+    ctx.lineTo(tw*0.85, tt);
+    ctx.lineTo(tw, tt+th);
+    ctx.lineTo(-tw, tt+th);
+    ctx.closePath();
+    ctx.fill();
+
+    // bark texture
+    ctx.strokeStyle = 'rgba(20,8,0,0.3)';
+    ctx.lineWidth = 0.8*s;
+    for (let i = 0; i < 4; i++) {
+      const x = -tw*0.5 + i*tw*0.35;
+      ctx.beginPath();
+      ctx.moveTo(x, tt+2);
+      ctx.lineTo(x + 2*s, tt+th-2);
+      ctx.stroke();
+    }
+  }
+
+  /* ════════════ Star ════════════ */
+  function drawStar(s) {
+    const sy = -168 * s;
+    const oR = 16*s, iR = 7*s;
+    const pts = 5;
+    const pulse = 0.85 + 0.15 * Math.sin(time * 2);
+
+    // outer glow
+    ctx.globalAlpha = pulse;
+    const gr = oR * 5;
+    ctx.drawImage(glow.gold, -gr, sy-gr, gr*2, gr*2);
+    ctx.drawImage(glow.warm, -gr*0.6, sy-gr*0.6, gr*1.2, gr*1.2);
+
+    // rays
+    ctx.globalAlpha = pulse * 0.5;
+    for (let i = 0; i < 8; i++) {
+      const ang = (i/8)*Math.PI*2 + time*0.4;
+      ctx.strokeStyle = `rgba(255,240,150,${0.3*pulse})`;
+      ctx.lineWidth = 1.5*s;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(ang)*oR*0.8, sy + Math.sin(ang)*oR*0.8);
+      ctx.lineTo(Math.cos(ang)*oR*2.2, sy + Math.sin(ang)*oR*2.2);
+      ctx.stroke();
+    }
+
+    // star shape
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    for (let i = 0; i < pts*2; i++) {
+      const r = i%2===0 ? oR : iR;
+      const a = (i*Math.PI)/pts - Math.PI/2;
+      const x = Math.cos(a)*r;
+      const y = sy + Math.sin(a)*r;
+      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.closePath();
+    const sg = ctx.createLinearGradient(0, sy-oR, 0, sy+oR);
+    sg.addColorStop(0,   '#fff8c0');
+    sg.addColorStop(0.4, '#ffd700');
+    sg.addColorStop(1,   '#e6a800');
+    ctx.fillStyle = sg;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(180,130,0,0.4)';
+    ctx.lineWidth = 1*s;
+    ctx.stroke();
+
+    // inner sparkle
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath();
+    ctx.arc(-oR*0.15, sy-oR*0.2, oR*0.12, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  /* ════════════ Snowflakes (crystalline) ════════════ */
+  class Snowflake {
+    constructor() { this.reset(true); }
+    reset(randY) {
+      this.x = Math.random()*W*1.2 - W*0.1;
+      this.y = randY ? Math.random()*H : -30;
+      this.depth = Math.random();
+      this.sz = 1.5 + this.depth*5;
+      this.speed = 0.3 + this.depth*2;
+      this.rot = Math.random()*Math.PI*2;
+      this.rotSp = (Math.random()-0.5)*0.015;
+      this.wob = Math.random()*1.5+0.4;
+      this.wobSp = Math.random()*0.02+0.005;
+      this.wobOff = Math.random()*Math.PI*2;
+      this.alpha = 0.25 + this.depth*0.55;
+    }
+    update(dt) {
+      this.y += this.speed * dt * 50;
+      this.wobOff += this.wobSp;
+      this.x += Math.sin(this.wobOff)*this.wob*dt*30 + (Math.random()-0.5)*0.15;
+      this.rot += this.rotSp * dt * 50;
+      if (this.y > H+30) this.reset(false);
+      if (this.x < -50) this.x = W+30;
+      if (this.x > W+50) this.x = -30;
+    }
+    draw() {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.globalAlpha = this.alpha;
+
+      // glow for larger flakes
+      if (this.depth > 0.5) {
+        ctx.globalAlpha = this.alpha * 0.2;
+        const gs = this.sz * 4;
+        ctx.drawImage(glow.white, -gs/2, -gs/2, gs, gs);
+      }
+
+      ctx.globalAlpha = this.alpha;
+      if (this.depth > 0.55) {
+        // detailed 6-pointed snowflake
+        ctx.rotate(this.rot);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 0.7;
+        ctx.lineCap = 'round';
+        for (let i = 0; i < 6; i++) {
+          const a = (i/6)*Math.PI*2;
+          const cx = Math.cos(a)*this.sz, cy = Math.sin(a)*this.sz;
+          ctx.beginPath();
+          ctx.moveTo(0,0);
+          ctx.lineTo(cx, cy);
+          // branches
+          const bl = this.sz*0.3;
+          const bx = cx*0.55, by = cy*0.55;
+          ctx.moveTo(bx, by);
+          ctx.lineTo(bx+Math.cos(a+0.6)*bl, by+Math.sin(a+0.6)*bl);
+          ctx.moveTo(bx, by);
+          ctx.lineTo(bx+Math.cos(a-0.6)*bl, by+Math.sin(a-0.6)*bl);
+          ctx.stroke();
+        }
+        // center dot
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(0, 0, 0.6, 0, Math.PI*2);
+        ctx.fill();
+      } else {
+        // simple dot for distant flakes
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(0, 0, this.sz*0.5, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  /* ════════════ Light Orbs ════════════ */
+  class LightOrb {
+    constructor() { this.reset(); }
+    reset() {
+      this.x = Math.random()*W;
+      this.y = H + Math.random()*80;
+      this.depth = Math.random();
+      this.sz = 2 + Math.random()*5;
+      this.vy = -(0.2 + Math.random()*0.6);
+      this.vx = (Math.random()-0.5)*0.2;
+      this.wob = Math.random()*25+8;
+      this.wobSp = Math.random()*0.008+0.003;
+      this.wobOff = Math.random()*Math.PI*2;
+      this.life = 0;
+      this.maxLife = 10 + Math.random()*12;
+      const colors = ['gold','warm','white','orange','pink'];
+      this.color = colors[Math.floor(Math.random()*colors.length)];
+      this.pulseSp = Math.random()*0.04+0.02;
+      this.pulseOff = Math.random()*Math.PI*2;
+    }
+    update(dt) {
+      this.y += this.vy * dt * 30;
+      this.wobOff += this.wobSp;
+      this.x += Math.sin(this.wobOff)*this.wob*dt*0.3 + this.vx*dt*30;
+      this.life += dt;
+      if (this.life > this.maxLife || this.y < -50) this.reset();
+    }
+    draw() {
+      const lr = this.life / this.maxLife;
+      let a;
+      if (lr < 0.15) a = lr/0.15;
+      else if (lr > 0.85) a = (1-lr)/0.15;
+      else a = 1;
+
+      const pulse = 0.7 + 0.3*Math.sin(time*this.pulseSp*50 + this.pulseOff);
+      a *= pulse * 0.65;
+
+      const ds = this.sz * 7 * pulse;
+      ctx.globalAlpha = a;
+      ctx.drawImage(glow[this.color], this.x-ds/2, this.y-ds/2, ds, ds);
+
+      ctx.globalAlpha = a * 0.9;
+      ctx.fillStyle = this.color==='gold' ? '#fff8c0'
+                    : this.color==='warm' ? '#fff0d0'
+                    : this.color==='orange' ? '#ffd8a0'
+                    : this.color==='pink' ? '#ffe0e8' : '#ffffff';
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.sz*0.6, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  /* ════════════ Sparkle Stars ════════════ */
+  class Sparkle {
+    constructor() { this.reset(); }
+    reset() {
+      this.x = Math.random()*W;
+      this.y = Math.random()*H*0.85;
+      this.sz = 1 + Math.random()*2.5;
+      this.life = Math.random();
+      this.sp = Math.random()*0.025+0.012;
+      this.color = Math.random()<0.55 ? 'gold' : 'white';
+    }
+    update(dt) {
+      this.life += this.sp * dt * 50;
+      if (this.life > 1) this.reset();
+    }
+    draw() {
+      const a = Math.sin(this.life * Math.PI);
+      if (a < 0.02) return;
+
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      const s = this.sz * (0.5 + a*0.6);
+
+      // glow
+      ctx.globalAlpha = a * 0.5;
+      const gs = s * 10;
+      ctx.drawImage(glow[this.color], -gs/2, -gs/2, gs, gs);
+
+      // 4-pointed star
+      ctx.globalAlpha = a;
+      ctx.fillStyle = this.color==='gold' ? '#fff8c0' : '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(0, -s*3);
+      ctx.lineTo(s*0.35, -s*0.35);
+      ctx.lineTo(s*3, 0);
+      ctx.lineTo(s*0.35, s*0.35);
+      ctx.lineTo(0, s*3);
+      ctx.lineTo(-s*0.35, s*0.35);
+      ctx.lineTo(-s*3, 0);
+      ctx.lineTo(-s*0.35, -s*0.35);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  /* ════════════ Fireworks ════════════ */
+  class Firework {
+    constructor(delay) {
+      this.cooldown = delay || (Math.random()*3+1);
+      this.active = false;
+      this.particles = [];
+    }
+    launch() {
+      this.x = W*0.15 + Math.random()*W*0.7;
+      this.y = H*0.1 + Math.random()*H*0.3;
+      this.life = 0;
+      this.maxLife = 1.5 + Math.random()*1.2;
+      this.exploded = false;
+      const n = 24 + Math.floor(Math.random()*24);
+      this.particles = [];
+      const fwColor = ['gold','red','blue','green','orange','pink'];
+      this.color = fwColor[Math.floor(Math.random()*fwColor.length)];
+      for (let i = 0; i < n; i++) {
+        const a = (i/n)*Math.PI*2 + Math.random()*0.2;
+        const sp = 35 + Math.random()*55;
+        this.particles.push({
+          x:0, y:0,
+          vx: Math.cos(a)*sp,
+          vy: Math.sin(a)*sp,
+          sz: 1.5 + Math.random()*2.5,
+          trail: []
+        });
+      }
+      this.active = true;
+    }
+    update(dt) {
+      if (!this.active) {
+        this.cooldown -= dt;
+        if (this.cooldown <= 0) {
+          this.launch();
+          this.cooldown = 4 + Math.random()*6;
+        }
+        return;
+      }
+      this.life += dt;
+      if (this.life > this.maxLife) { this.active = false; return; }
+      if (!this.exploded && this.life > 0.08) this.exploded = true;
+
+      for (const p of this.particles) {
+        p.trail.push({x:p.x, y:p.y});
+        if (p.trail.length > 6) p.trail.shift();
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy += 25 * dt;
+        p.vx *= 0.97;
+        p.vy *= 0.97;
+      }
+    }
+    draw() {
+      if (!this.active || !this.exploded) return;
+      const lr = (this.life - 0.08) / (this.maxLife - 0.08);
+      let a;
+      if (lr < 0.08) a = lr/0.08;
+      else a = Math.max(0, 1 - (lr-0.08)/0.92);
+
+      for (const p of this.particles) {
+        const px = this.x + p.x;
+        const py = this.y + p.y;
+
+        // trail
+        for (let i = 0; i < p.trail.length; i++) {
+          const t = p.trail[i];
+          const ta = (i/p.trail.length) * a * 0.4;
+          ctx.globalAlpha = ta;
+          const ts = p.sz * 3 * (i/p.trail.length);
+          ctx.drawImage(glow[this.color], this.x+t.x-ts/2, this.y+t.y-ts/2, ts, ts);
+        }
+
+        // glow
+        ctx.globalAlpha = a * 0.6;
+        const gs = p.sz * 8;
+        ctx.drawImage(glow[this.color], px-gs/2, py-gs/2, gs, gs);
+
+        // core
+        ctx.globalAlpha = a;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(px, py, p.sz*0.6, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+
+  /* ════════════ Shooting Star ════════════ */
+  class ShootingStar {
+    constructor() { this.active = false; this.cd = 3+Math.random()*5; }
+    launch() {
+      this.x = Math.random()*W*0.4;
+      this.y = Math.random()*H*0.25;
+      this.ang = Math.PI*0.12 + Math.random()*Math.PI*0.2;
+      this.sp = 350 + Math.random()*200;
+      this.life = 0;
+      this.maxLife = 1.2;
+      this.trail = [];
+      this.active = true;
+    }
+    update(dt) {
+      if (!this.active) {
+        this.cd -= dt;
+        if (this.cd <= 0) { this.launch(); this.cd = 5+Math.random()*10; }
+        return;
+      }
+      this.life += dt;
+      this.x += Math.cos(this.ang)*this.sp*dt;
+      this.y += Math.sin(this.ang)*this.sp*dt;
+      this.trail.push({x:this.x, y:this.y});
+      if (this.trail.length > 25) this.trail.shift();
+      if (this.life > this.maxLife || this.x > W+50 || this.y > H*0.6) {
+        this.active = false;
+      }
+    }
+    draw() {
+      if (!this.active) return;
+      for (let i = 0; i < this.trail.length; i++) {
+        const t = this.trail[i];
+        const a = (i/this.trail.length) * 0.5;
+        ctx.globalAlpha = a;
+        const sz = (i/this.trail.length)*4 + 2;
+        ctx.drawImage(glow.white, t.x-sz, t.y-sz, sz*2, sz*2);
+      }
+      ctx.globalAlpha = 1;
+      ctx.drawImage(glow.white, this.x-15, this.y-15, 30, 30);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, 2, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  /* ════════════ Tree Dust (magical rising particles) ════════════ */
+  class TreeDust {
+    constructor() { this.reset(); }
+    reset() {
+      const angle = Math.random()*Math.PI*2;
+      const dist = Math.random()*100*scale;
+      this.x = treeCX + Math.cos(angle)*dist;
+      this.y = treeCY + 50*scale + Math.random()*100*scale;
+      this.vy = -(0.3 + Math.random()*0.8);
+      this.vx = (Math.random()-0.5)*0.15;
+      this.sz = 0.8 + Math.random()*2;
+      this.life = 0;
+      this.maxLife = 4 + Math.random()*5;
+      this.color = Math.random()<0.5 ? 'gold' : 'warm';
+      this.pulseSp = Math.random()*0.05+0.02;
+      this.pulseOff = Math.random()*Math.PI*2;
+    }
+    update(dt) {
+      this.y += this.vy * dt * 30;
+      this.x += this.vx * dt * 30 + Math.sin(this.life*2)*0.3;
+      this.life += dt;
+      if (this.life > this.maxLife || this.y < treeCY - 200*scale) this.reset();
+    }
+    draw() {
+      const lr = this.life / this.maxLife;
+      let a;
+      if (lr < 0.2) a = lr/0.2;
+      else if (lr > 0.8) a = (1-lr)/0.2;
+      else a = 1;
+      const pulse = 0.6 + 0.4*Math.sin(time*this.pulseSp*50+this.pulseOff);
+      a *= pulse * 0.6;
+
+      const ds = this.sz * 5 * pulse;
+      ctx.globalAlpha = a;
+      ctx.drawImage(glow[this.color], this.x-ds/2, this.y-ds/2, ds, ds);
+    }
+  }
+
+  /* ════════════ Particle System ════════════ */
+  let snowflakes = [], orbs = [], sparkles = [];
+  let fireworks = [], shootingStar, treeDust = [];
+
+  function initParticles() {
+    initBgStars();
+
+    const sn = isMobile ? 80 : 150;
+    snowflakes = [];
+    for (let i = 0; i < sn; i++) snowflakes.push(new Snowflake());
+
+    const on = isMobile ? 12 : 22;
+    orbs = [];
+    for (let i = 0; i < on; i++) orbs.push(new LightOrb());
+
+    const sp = isMobile ? 30 : 55;
+    sparkles = [];
+    for (let i = 0; i < sp; i++) sparkles.push(new Sparkle());
+
+    fireworks = [
+      new Firework(1.5),
+      new Firework(4),
+      new Firework(7.5)
+    ];
+    shootingStar = new ShootingStar();
+
+    const dn = isMobile ? 15 : 28;
+    treeDust = [];
+    for (let i = 0; i < dn; i++) treeDust.push(new TreeDust());
+  }
+
+  function updateParticles(dt) {
+    for (const s of snowflakes) s.update(dt);
+    for (const o of orbs) o.update(dt);
+    for (const s of sparkles) s.update(dt);
+    for (const f of fireworks) f.update(dt);
+    shootingStar.update(dt);
+    for (const d of treeDust) d.update(dt);
+  }
+
+  function drawParticles() {
+    for (const s of snowflakes) s.draw();
+    for (const o of orbs) o.draw();
+    for (const s of sparkles) s.draw();
+    for (const f of fireworks) f.draw();
+    shootingStar.draw();
+    for (const d of treeDust) d.draw();
+    ctx.globalAlpha = 1;
+  }
+
+  /* ════════════ Render Tree (3D pipeline) ════════════ */
+  function renderTree(s, rot) {
+    // Pre-compute 3D data
+    const garland = computeGarland(s, rot);
+    const ornaments = computeOrnaments(s, rot);
+
+    // 1. Tree ambient glow (behind tree)
+    drawTreeGlow();
+
+    ctx.save();
+    ctx.translate(treeCX, treeCY);
+
+    // 2. Trunk (behind tree body)
+    drawTrunk(s);
+
+    // 3. Back garland (will be hidden by tree body, draw faint)
+    drawGarlandSegs(garland.back, 0.04);
+
+    // 4. Tree body with 3D shading
+    drawTreeBody(s, rot);
+
+    // 5. Tree ridges (3D surface texture)
+    drawTreeRidges(s, rot);
+
+    // 6. Front garland
+    drawGarlandSegs(garland.front, 0.7);
+    drawGarlandLights(garland.frontLights);
+
+    // 7. Front ornaments (sorted back-to-front)
+    for (const o of ornaments) drawOrnament(o);
+
+    // 8. Star on top
+    drawStar(s);
+
+    ctx.restore();
+  }
+
+  /* ════════════ Animation Loop ════════════ */
+  let lastT = 0;
+
+  function loop(ts) {
+    const dt = Math.min((ts - lastT) / 1000, 0.05);
+    lastT = ts;
+    time += dt;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Background layers
+    drawSky();
+    drawMoon();
+    drawBgStars();
+
+    // Tree (3D rotation)
+    renderTree(scale, rotAngle);
+
+    // Foreground
+    drawGround();
+
+    // Particles
+    updateParticles(dt);
+    drawParticles();
+
+    // Vignette
+    drawVignette();
+
+    // Rotation: ~12s per full turn
+    rotAngle += 0.52 * dt;
+
+    requestAnimationFrame(loop);
+  }
+
+  /* ════════════ Init ════════════ */
+  window.addEventListener('resize', resize);
+  initSprites();
+  resize();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
